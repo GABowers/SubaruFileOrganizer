@@ -1,5 +1,5 @@
 # SubaruFileOrganizer
-Small program to orgnize music optimally for USB playback on the Subaru "Starlink" OS.
+Small program to organize music optimally for USB playback on the Subaru "Starlink" OS.
 
 To my understanding Starlink works best when there are as few folders as possible, and yet an individual folder should not have more than 256 files.
 

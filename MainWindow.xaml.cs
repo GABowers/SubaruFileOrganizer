@@ -29,6 +29,7 @@ namespace SubaruFileOrganizer
     {
         private System.Threading.SynchronizationContext _uiContext = System.Threading.SynchronizationContext.Current;
         public ObservableCollection<BindingClass> Log { get; set; }
+        int curDone = 0;
         ScrollViewer scroller;
         public MainWindow()
         {
@@ -74,9 +75,10 @@ namespace SubaruFileOrganizer
 
         private void start_Click(object sender, RoutedEventArgs e)
         {
+            this.TaskbarItemInfo = new System.Windows.Shell.TaskbarItemInfo() { ProgressState = System.Windows.Shell.TaskbarItemProgressState.Normal };
             var input = inputLabel.Text;
             var output = outputLabel.Text;
-            if(!Directory.Exists(output))
+            if (!Directory.Exists(output))
             {
                 var ou = Directory.CreateDirectory(output);
             }
@@ -89,20 +91,24 @@ namespace SubaruFileOrganizer
                 outputLabel.IsEnabled = false;
                 Task.Run(() =>
                 {
-                    
-                    ConcurrentBag< Tuple<TagLib.File, string>> allData = new ConcurrentBag<Tuple<TagLib.File, string>>();
+                    ConcurrentBag<Tuple<TagLib.File, string>> allData = new ConcurrentBag<Tuple<TagLib.File, string>>();
                     var all = Directory.EnumerateFiles(input, "*", SearchOption.AllDirectories).ToList();
+                    var total = all.Count;
                     this.Dispatcher.Invoke(() =>
                     {
-                        totalLabel.Content = all.Count;
+                        totalLabel.Content = total;
                     });
-                    int cur = 0;
+                    curDone = 0;
                     Timer t = new Timer() { Interval = 100 };
                     t.Elapsed += ((object sender2, ElapsedEventArgs e2) =>
                     {
                         this.Dispatcher.BeginInvoke(new Action(() =>
                         {
-                            curLabel.Content = cur;
+                            curLabel.Content = curDone;
+                            if (curDone == total)
+                            {
+                                t.Stop();
+                            }
                         }));
                     });
                     t.Start();
@@ -112,7 +118,7 @@ namespace SubaruFileOrganizer
                         {
                             AudioFileReader afr = new AudioFileReader(item);
                             var tag = TagLib.File.Create(item);
-                            if(tag.Tag.Title != null && tag.Tag.Year != 0 && tag.Tag.Album != null && (tag.Tag.JoinedAlbumArtists != null || tag.Tag.FirstArtist != null)) // checking for any metadata at all
+                            if (tag.Tag.Title != null && tag.Tag.Year != 0 && tag.Tag.Album != null && (tag.Tag.JoinedAlbumArtists != null || tag.Tag.FirstArtist != null)) // checking for any metadata at all
                             {
                                 allData.Add(new Tuple<TagLib.File, string>(tag, item));
                             }
@@ -140,10 +146,14 @@ namespace SubaruFileOrganizer
                                 PrintLog(item, "Failed to parse as audio", "Reading");
                             }
                         }
-                        cur++;
+                        curDone++;
+                        this.Dispatcher.Invoke(() =>
+                        {
+                            this.TaskbarItemInfo.ProgressValue = (double)curDone / total;
+                        });
                     });
                     t.Stop();
-                    cur = 0;
+                    curDone = 0;
                     List<string> artists = new List<string>();
                     foreach (var x in allData)
                     {
@@ -179,19 +189,21 @@ namespace SubaruFileOrganizer
                             }
                             return false;
                         }).Select(x => new Tuple<uint, string>(x.Item1.Tag.Year, x.Item1.Tag.Album)).Distinct().ToList();
-                        albums.Sort();
+                        albums = albums.OrderBy(x => x.Item1).ThenBy(x => x.Item2).ToList();
                         artistAlbums.Add(artist, albums);
                     }
                     int curFolder = 0;
                     int curFolderCount = 0;
+                    total = allData.Count;
                     t.Start();
                     this.Dispatcher.Invoke(() =>
                     {
                         descriptionLabel.Content = "Copying files: ";
-                        totalLabel.Content = allData.Count;
+                        totalLabel.Content = total;
                         SetFullAccessPermissionsForEveryone(output);
                         Directory.CreateDirectory(output + "/" + curFolderCount.ToString());
                     });
+                    Random rng = new Random();
                     for (int i = 0; i < artists.Count; i++)
                     {
                         for (int j = 0; j < artistAlbums[artists[i]].Count; j++)
@@ -221,11 +233,11 @@ namespace SubaruFileOrganizer
                                     return false;
                                 }
                             }).ToList();
-                            if((curFolder + songs.Count) > 256)
+                            if ((curFolder + songs.Count) > 256)
                             {
                                 curFolderCount++;
                                 curFolder = 0;
-                                if(songs.Count > 256)
+                                if (songs.Count > 256)
                                 {
                                     foreach (var item in songs)
                                     {
@@ -238,7 +250,8 @@ namespace SubaruFileOrganizer
                                     Directory.CreateDirectory(output + "/" + curFolderCount.ToString());
                                 });
                             }
-                            Parallel.For(0, songs.Count, (k) =>
+                            songs = songs.OrderBy(x => x.Item1.Tag.Track).ToList();
+                            for (int k = 0; k < songs.Count; k++)
                             {
                                 var item = songs[k];
                                 string title = item.Item1.Tag.Title;
@@ -249,25 +262,34 @@ namespace SubaruFileOrganizer
                                         title = title.Replace(c, '_');
                                     }
                                 });
-                                string newName = i + "-" + j + " " + item.Item1.Tag.Disc + "-" + item.Item1.Tag.Track + " " + title + "." + item.Item2.Split('.').Last();
+                                string newName = StringFromNumber(curFolder) + " " + title + "." + item.Item2.Split('.').Last();
                                 string fullName = output + "/" + curFolderCount + "/" + newName;
+                                if (!File.Exists(fullName))
+                                {
+                                    File.Copy(songs[k].Item2, fullName);
+                                }
+                                else
+                                {
+                                    PrintLog(item.Item2, "File exists", "Writing");
+                                }
+                                FileAttributes attributes = File.GetAttributes(fullName);
+                                if ((attributes & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
+                                {
+                                    File.SetAttributes(fullName, attributes & ~FileAttributes.ReadOnly);
+                                }
+                                curDone++;
+                                curFolder++;
                                 this.Dispatcher.Invoke(() =>
                                 {
-                                    if(!File.Exists(fullName))
-                                    {
-                                        File.Copy(songs[k].Item2, fullName);
-                                    }
-                                    else
-                                    {
-                                        PrintLog(item.Item2, "File exists", "Writing");
-                                    }
+                                    this.TaskbarItemInfo.ProgressValue = (double)curDone / total;
                                 });
-                                cur++;
-                                curFolder++;
-                            });
+                            };
                         }
                     }
-                    t.Stop();
+                    this.Dispatcher.Invoke(() =>
+                    {
+                        this.TaskbarItemInfo.ProgressState = System.Windows.Shell.TaskbarItemProgressState.None;
+                    });
                     this.Dispatcher.Invoke(() =>
                     {
                         inputButton.IsEnabled = true;
@@ -279,6 +301,46 @@ namespace SubaruFileOrganizer
                 });
             }
         }
+
+        string StringFromNumber(int number)
+        {
+            string output = "";
+            int zs = number / 26;
+            output += alphabet[zs];
+            int inc = number % 26;
+            output += alphabet[inc];
+            return output;
+        }
+
+        static Dictionary<int, string> alphabet = new Dictionary<int, string>
+        {
+            {0, "A" },
+            {1, "B" },
+            {2, "C" },
+            {3, "D" },
+            {4, "E" },
+            {5, "F" },
+            {6, "G" },
+            {7, "H" },
+            {8, "I" },
+            {9, "J" },
+            {10, "K" },
+            {11, "L" },
+            {12, "M" },
+            {13, "N" },
+            {14, "O" },
+            {15, "P" },
+            {16, "Q" },
+            {17, "R" },
+            {18, "S" },
+            {19, "T" },
+            {20, "U" },
+            {21, "V" },
+            {22, "W" },
+            {23, "X" },
+            {24, "Y" },
+            {25, "Z" },
+        };
 
         void PrintLog(string file, string reason, string step)
         {
@@ -305,7 +367,6 @@ namespace SubaruFileOrganizer
 
         public static void SetFullAccessPermissionsForEveryone(string directoryPath)
         {
-            //Everyone Identity
             IdentityReference everyoneIdentity = new SecurityIdentifier(WellKnownSidType.WorldSid,
                                                        null);
 

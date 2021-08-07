@@ -254,6 +254,7 @@ namespace SubaruFileOrganizer
                             for (int k = 0; k < songs.Count; k++)
                             {
                                 var item = songs[k];
+                                bool flac = false;
                                 string title = item.Item1.Tag.Title;
                                 this.Dispatcher.Invoke(() =>
                                 {
@@ -264,9 +265,45 @@ namespace SubaruFileOrganizer
                                 });
                                 string newName = StringFromNumber(curFolder) + " " + title + "." + item.Item2.Split('.').Last();
                                 string fullName = output + "/" + curFolderCount + "/" + newName;
+                                if (fullName.ToLower().Contains(".flac"))
+                                {
+                                    flac = true;
+                                    string[] array = fullName.Split('.');
+                                    fullName = String.Join(".", array.ToList().GetRange(0, array.Length - 1)) + ".mp3";
+                                }
+
                                 if (!File.Exists(fullName))
                                 {
-                                    File.Copy(songs[k].Item2, fullName);
+                                    if (flac && flacCheck.IsChecked.Value)
+                                    {
+                                        var tag = new NAudio.Lame.ID3TagData
+                                        {
+                                            Title = item.Item1.Tag.Title,
+                                            Track = item.Item1.Tag.Track.ToString(),
+                                            Album = item.Item1.Tag.Album,
+                                            AlbumArtist = item.Item1.Tag.FirstAlbumArtist,
+                                            Artist = item.Item1.Tag.FirstArtist,
+                                            Year = item.Item1.Tag.Year.ToString(),
+                                            Genre = item.Item1.Tag.JoinedGenres,
+                                            Comment = item.Item1.Tag.Comment,
+                                            Subtitle = item.Item1.Tag.Subtitle
+                                        };
+                                        if(item.Item1.Tag.Pictures.Length > 0)
+                                        {
+                                            tag.AlbumArt = item.Item1.Tag.Pictures.First().Data.Data;
+                                        }
+                                        using (var reader = new AudioFileReader(item.Item2))
+                                        {
+                                            using (var writer = new NAudio.Lame.LameMP3FileWriter(fullName, reader.WaveFormat, 320, tag))
+                                            {
+                                                reader.CopyTo(writer);
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        File.Copy(songs[k].Item2, fullName);
+                                    }
                                 }
                                 else
                                 {

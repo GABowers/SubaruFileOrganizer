@@ -18,16 +18,18 @@
             <ColumnDefinition Width="1*"/>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
-        <Label Content="Choose the folder location: Folder>Artist>Album>Music files" Grid.Row="0" Grid.Column="0"/>
+        <Label Content="Choose the folder to search recursively." Grid.Row="0" Grid.Column="0"/>
         <TextBox x:Name="inputLabel" Grid.Row="0" Grid.Column="1"/>
         <Button x:Name="inputButton" Content="Browse" Grid.Row="0" Grid.Column="2" Click="inputButton_Click"/>
         <Label Content="Select the output folder." Grid.Row="1" Grid.Column="0"/>
         <TextBox x:Name="outputLabel" Grid.Row="1" Grid.Column="1"/>
         <Button x:Name="outputButton" Content="Browse" Grid.Row="1" Grid.Column="2" Click="outputButton_Click"/>
-        <Button x:Name="start" Content="Begin" Grid.Column="3" Grid.RowSpan="3" Grid.Row="0" Click="start_Click"/>
+        <CheckBox x:Name="flacCheck" Grid.Column="3" Grid.Row="0" IsChecked="True" Content="FLAC to MP3" VerticalAlignment="Center" VerticalContentAlignment="Center" HorizontalAlignment="Center" HorizontalContentAlignment="Center" Margin="5"/>
+        <Button x:Name="start" Content="Begin" Grid.Column="4" Grid.RowSpan="3" Grid.Row="0" Click="start_Click"/>
         <Label x:Name="descriptionLabel" Content="Currently checking file: " Grid.Row="2" Grid.Column="0" HorizontalContentAlignment="Right"/>
-        <Grid Grid.Row="2" Grid.Column="1">
+        <Grid Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>

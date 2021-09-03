@@ -78,6 +78,7 @@ namespace SubaruFileOrganizer
             this.TaskbarItemInfo = new System.Windows.Shell.TaskbarItemInfo() { ProgressState = System.Windows.Shell.TaskbarItemProgressState.Normal };
             var input = inputLabel.Text;
             var output = outputLabel.Text;
+            var checkedFLAC = flacCheck.IsChecked.Value;
             if (!Directory.Exists(output))
             {
                 var ou = Directory.CreateDirectory(output);
@@ -91,46 +92,34 @@ namespace SubaruFileOrganizer
                 outputLabel.IsEnabled = false;
                 Task.Run(() =>
                 {
-                    ConcurrentBag<Tuple<TagLib.File, string>> allData = new ConcurrentBag<Tuple<TagLib.File, string>>();
-                    var all = Directory.EnumerateFiles(input, "*", SearchOption.AllDirectories).ToList();
-                    var total = all.Count;
-                    this.Dispatcher.Invoke(() =>
+                    try
                     {
-                        totalLabel.Content = total;
-                    });
-                    curDone = 0;
-                    Timer t = new Timer() { Interval = 100 };
-                    t.Elapsed += ((object sender2, ElapsedEventArgs e2) =>
-                    {
-                        this.Dispatcher.BeginInvoke(new Action(() =>
+                        ConcurrentBag<Tuple<TagLib.File, string>> allData = new ConcurrentBag<Tuple<TagLib.File, string>>();
+                        var all = Directory.EnumerateFiles(input, "*", SearchOption.AllDirectories).ToList();
+                        var total = all.Count;
+                        this.Dispatcher.Invoke(() =>
                         {
-                            curLabel.Content = curDone;
-                            if (curDone == total)
-                            {
-                                t.Stop();
-                            }
-                        }));
-                    });
-                    t.Start();
-                    Parallel.ForEach(all, (item) =>
-                    {
-                        try
+                            totalLabel.Content = total;
+                        });
+                        curDone = 0;
+                        Timer t = new Timer() { Interval = 100 };
+                        t.Elapsed += ((object sender2, ElapsedEventArgs e2) =>
                         {
-                            AudioFileReader afr = new AudioFileReader(item);
-                            var tag = TagLib.File.Create(item);
-                            if (tag.Tag.Title != null && tag.Tag.Year != 0 && tag.Tag.Album != null && (tag.Tag.JoinedAlbumArtists != null || tag.Tag.FirstArtist != null)) // checking for any metadata at all
+                            this.Dispatcher.BeginInvoke(new Action(() =>
                             {
-                                allData.Add(new Tuple<TagLib.File, string>(tag, item));
-                            }
-                            else
-                            {
-                                PrintLog(item, "Missing metadata", "Reading");
-                            }
-                        }
-                        catch (Exception ee)
+                                curLabel.Content = curDone;
+                                if (curDone == total)
+                                {
+                                    t.Stop();
+                                }
+                            }));
+                        });
+                        t.Start();
+                        Parallel.ForEach(all, (item) =>
                         {
-                            if (item.Contains(".mp3"))
+                            try
                             {
+                                AudioFileReader afr = new AudioFileReader(item);
                                 var tag = TagLib.File.Create(item);
                                 if (tag.Tag.Title != null && tag.Tag.Year != 0 && tag.Tag.Album != null && (tag.Tag.JoinedAlbumArtists != null || tag.Tag.FirstArtist != null)) // checking for any metadata at all
                                 {
@@ -141,200 +130,221 @@ namespace SubaruFileOrganizer
                                     PrintLog(item, "Missing metadata", "Reading");
                                 }
                             }
-                            else
+                            catch (Exception ee)
                             {
-                                PrintLog(item, "Failed to parse as audio", "Reading");
+                                if (item.Contains(".mp3"))
+                                {
+                                    var tag = TagLib.File.Create(item);
+                                    if (tag.Tag.Title != null && tag.Tag.Year != 0 && tag.Tag.Album != null && (tag.Tag.JoinedAlbumArtists != null || tag.Tag.FirstArtist != null)) // checking for any metadata at all
+                                    {
+                                        allData.Add(new Tuple<TagLib.File, string>(tag, item));
+                                    }
+                                    else
+                                    {
+                                        PrintLog(item, "Missing metadata", "Reading");
+                                    }
+                                }
+                                else
+                                {
+                                    PrintLog(item, "Failed to parse as audio", "Reading");
+                                }
                             }
-                        }
-                        curDone++;
-                        this.Dispatcher.Invoke(() =>
-                        {
-                            this.TaskbarItemInfo.ProgressValue = (double)curDone / total;
+                            curDone++;
+                            this.Dispatcher.Invoke(() =>
+                            {
+                                this.TaskbarItemInfo.ProgressValue = (double)curDone / total;
+                            });
                         });
-                    });
-                    t.Stop();
-                    curDone = 0;
-                    List<string> artists = new List<string>();
-                    foreach (var x in allData)
-                    {
-                        if (x.Item1.Tag.JoinedAlbumArtists != null)
-                        {
-                            artists.Add(x.Item1.Tag.JoinedAlbumArtists);
-                        }
-                        else
-                        {
-                            artists.Add(x.Item1.Tag.FirstArtist);
-                        }
-                    }
-                    artists = artists.Distinct().ToList();
-                    artists.Sort();
-                    Dictionary<string, List<Tuple<uint, string>>> artistAlbums = new Dictionary<string, List<Tuple<uint, string>>>();
-                    foreach (var artist in artists)
-                    {
-                        var albums = allData.Where((x) =>
+                        t.Stop();
+                        curDone = 0;
+                        List<string> artists = new List<string>();
+                        foreach (var x in allData)
                         {
                             if (x.Item1.Tag.JoinedAlbumArtists != null)
                             {
-                                if (x.Item1.Tag.JoinedAlbumArtists.Equals(artist))
-                                {
-                                    return true;
-                                }
+                                artists.Add(x.Item1.Tag.JoinedAlbumArtists);
                             }
                             else
                             {
-                                if (x.Item1.Tag.FirstArtist.Equals(artist))
-                                {
-                                    return true;
-                                }
+                                artists.Add(x.Item1.Tag.FirstArtist);
                             }
-                            return false;
-                        }).Select(x => new Tuple<uint, string>(x.Item1.Tag.Year, x.Item1.Tag.Album)).Distinct().ToList();
-                        albums = albums.OrderBy(x => x.Item1).ThenBy(x => x.Item2).ToList();
-                        artistAlbums.Add(artist, albums);
-                    }
-                    int curFolder = 0;
-                    int curFolderCount = 0;
-                    total = allData.Count;
-                    t.Start();
-                    this.Dispatcher.Invoke(() =>
-                    {
-                        descriptionLabel.Content = "Copying files: ";
-                        totalLabel.Content = total;
-                        SetFullAccessPermissionsForEveryone(output);
-                        Directory.CreateDirectory(output + "/" + curFolderCount.ToString());
-                    });
-                    Random rng = new Random();
-                    for (int i = 0; i < artists.Count; i++)
-                    {
-                        for (int j = 0; j < artistAlbums[artists[i]].Count; j++)
+                        }
+                        artists = artists.Distinct().ToList();
+                        artists.Sort();
+                        Dictionary<string, List<Tuple<uint, string>>> artistAlbums = new Dictionary<string, List<Tuple<uint, string>>>();
+                        foreach (var artist in artists)
                         {
-                            var songs = allData.Where(x =>
+                            var albums = allData.Where((x) =>
                             {
-                                if (x.Item1.Tag.Year.Equals(artistAlbums[artists[i]][j].Item1) && x.Item1.Tag.Album.Equals(artistAlbums[artists[i]][j].Item2))
+                                if (x.Item1.Tag.JoinedAlbumArtists != null)
                                 {
-                                    if (x.Item1.Tag.JoinedAlbumArtists != null)
+                                    if (x.Item1.Tag.JoinedAlbumArtists.Equals(artist))
                                     {
-                                        if (x.Item1.Tag.JoinedAlbumArtists.Equals(artists[i]))
-                                        {
-                                            return true;
-                                        }
+                                        return true;
                                     }
-                                    else
-                                    {
-                                        if (x.Item1.Tag.FirstArtist.Equals(artists[i]))
-                                        {
-                                            return true;
-                                        }
-                                    }
-                                    return false;
                                 }
                                 else
                                 {
-                                    return false;
-                                }
-                            }).ToList();
-                            if ((curFolder + songs.Count) > 256)
-                            {
-                                curFolderCount++;
-                                curFolder = 0;
-                                if (songs.Count > 256)
-                                {
-                                    foreach (var item in songs)
+                                    if (x.Item1.Tag.FirstArtist.Equals(artist))
                                     {
-                                        PrintLog(item.Item2, "Album too large - handle personally", "Writing");
+                                        return true;
                                     }
-                                    continue;
                                 }
-                                this.Dispatcher.Invoke(() =>
-                                {
-                                    Directory.CreateDirectory(output + "/" + curFolderCount.ToString());
-                                });
-                            }
-                            songs = songs.OrderBy(x => x.Item1.Tag.Track).ToList();
-                            for (int k = 0; k < songs.Count; k++)
+                                return false;
+                            }).Select(x => new Tuple<uint, string>(x.Item1.Tag.Year, x.Item1.Tag.Album)).Distinct().ToList();
+                            albums = albums.OrderBy(x => x.Item1).ThenBy(x => x.Item2).ToList();
+                            artistAlbums.Add(artist, albums);
+                        }
+                        int curFolder = 0;
+                        int curFolderCount = 0;
+                        total = allData.Count;
+                        t.Start();
+                        this.Dispatcher.Invoke(() =>
+                        {
+                            descriptionLabel.Content = "Copying files: ";
+                            totalLabel.Content = total;
+                            SetFullAccessPermissionsForEveryone(output);
+                            Directory.CreateDirectory(output + "/" + curFolderCount.ToString());
+                        });
+                        Random rng = new Random();
+                        for (int i = 0; i < artists.Count; i++)
+                        {
+                            for (int j = 0; j < artistAlbums[artists[i]].Count; j++)
                             {
-                                var item = songs[k];
-                                bool flac = false;
-                                string title = item.Item1.Tag.Title;
-                                this.Dispatcher.Invoke(() =>
+                                var songs = allData.Where(x =>
                                 {
-                                    foreach (char c in System.IO.Path.GetInvalidFileNameChars())
+                                    if (x.Item1.Tag.Year.Equals(artistAlbums[artists[i]][j].Item1) && x.Item1.Tag.Album.Equals(artistAlbums[artists[i]][j].Item2))
                                     {
-                                        title = title.Replace(c, '_');
-                                    }
-                                });
-                                string newName = StringFromNumber(curFolder) + " " + title + "." + item.Item2.Split('.').Last();
-                                string fullName = output + "/" + curFolderCount + "/" + newName;
-                                if (fullName.ToLower().Contains(".flac"))
-                                {
-                                    flac = true;
-                                    string[] array = fullName.Split('.');
-                                    fullName = String.Join(".", array.ToList().GetRange(0, array.Length - 1)) + ".mp3";
-                                }
-
-                                if (!File.Exists(fullName))
-                                {
-                                    if (flac && flacCheck.IsChecked.Value)
-                                    {
-                                        var tag = new NAudio.Lame.ID3TagData
+                                        if (x.Item1.Tag.JoinedAlbumArtists != null)
                                         {
-                                            Title = item.Item1.Tag.Title,
-                                            Track = item.Item1.Tag.Track.ToString(),
-                                            Album = item.Item1.Tag.Album,
-                                            AlbumArtist = item.Item1.Tag.FirstAlbumArtist,
-                                            Artist = item.Item1.Tag.FirstArtist,
-                                            Year = item.Item1.Tag.Year.ToString(),
-                                            Genre = item.Item1.Tag.JoinedGenres,
-                                            Comment = item.Item1.Tag.Comment,
-                                            Subtitle = item.Item1.Tag.Subtitle
-                                        };
-                                        if(item.Item1.Tag.Pictures.Length > 0)
-                                        {
-                                            tag.AlbumArt = item.Item1.Tag.Pictures.First().Data.Data;
-                                        }
-                                        using (var reader = new AudioFileReader(item.Item2))
-                                        {
-                                            using (var writer = new NAudio.Lame.LameMP3FileWriter(fullName, reader.WaveFormat, 320, tag))
+                                            if (x.Item1.Tag.JoinedAlbumArtists.Equals(artists[i]))
                                             {
-                                                reader.CopyTo(writer);
+                                                return true;
                                             }
                                         }
+                                        else
+                                        {
+                                            if (x.Item1.Tag.FirstArtist.Equals(artists[i]))
+                                            {
+                                                return true;
+                                            }
+                                        }
+                                        return false;
                                     }
                                     else
                                     {
-                                        File.Copy(songs[k].Item2, fullName);
+                                        return false;
                                     }
-                                }
-                                else
+                                }).ToList();
+                                if ((curFolder + songs.Count) > 256)
                                 {
-                                    PrintLog(item.Item2, "File exists", "Writing");
+                                    curFolderCount++;
+                                    curFolder = 0;
+                                    if (songs.Count > 256)
+                                    {
+                                        foreach (var item in songs)
+                                        {
+                                            PrintLog(item.Item2, "Album too large - handle personally", "Writing");
+                                        }
+                                        continue;
+                                    }
+                                    this.Dispatcher.Invoke(() =>
+                                    {
+                                        Directory.CreateDirectory(output + "/" + curFolderCount.ToString());
+                                    });
                                 }
-                                FileAttributes attributes = File.GetAttributes(fullName);
-                                if ((attributes & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
+                                songs = songs.OrderBy(x => x.Item1.Tag.Disc).ThenBy(x => x.Item1.Tag.Track).ToList();
+
+                                for (int k = 0; k < songs.Count; k++)
                                 {
-                                    File.SetAttributes(fullName, attributes & ~FileAttributes.ReadOnly);
-                                }
-                                curDone++;
-                                curFolder++;
-                                this.Dispatcher.Invoke(() =>
-                                {
-                                    this.TaskbarItemInfo.ProgressValue = (double)curDone / total;
-                                });
-                            };
+                                    var item = songs[k];
+                                    bool flac = false;
+                                    string title = item.Item1.Tag.Title;
+                                    this.Dispatcher.Invoke(() =>
+                                    {
+                                        foreach (char c in System.IO.Path.GetInvalidFileNameChars())
+                                        {
+                                            title = title.Replace(c, '_');
+                                        }
+                                    });
+                                    string newName = StringFromNumber(curFolder) + " " + title + "." + item.Item2.Split('.').Last();
+                                    string fullName = output + "/" + curFolderCount + "/" + newName;
+                                    if (fullName.ToLower().Contains(".flac"))
+                                    {
+                                        flac = true;
+                                        string[] array = fullName.Split('.');
+                                        fullName = String.Join(".", array.ToList().GetRange(0, array.Length - 1)) + ".mp3";
+                                    }
+
+                                    if (!File.Exists(fullName))
+                                    {
+                                        if (flac && checkedFLAC)
+                                        {
+                                            var tag = new NAudio.Lame.ID3TagData
+                                            {
+                                                Title = item.Item1.Tag.Title,
+                                                Track = item.Item1.Tag.Track.ToString(),
+                                                Album = item.Item1.Tag.Album,
+                                                AlbumArtist = item.Item1.Tag.FirstAlbumArtist,
+                                                Artist = item.Item1.Tag.FirstArtist,
+                                                Year = item.Item1.Tag.Year.ToString(),
+                                                Genre = item.Item1.Tag.JoinedGenres,
+                                                Comment = item.Item1.Tag.Comment,
+                                                Subtitle = item.Item1.Tag.Subtitle
+                                            };
+                                            if (item.Item1.Tag.Pictures.Length > 0)
+                                            {
+                                                tag.AlbumArt = item.Item1.Tag.Pictures.First().Data.Data;
+                                            }
+                                            using (var reader = new AudioFileReader(item.Item2))
+                                            {
+                                                using (var writer = new NAudio.Lame.LameMP3FileWriter(fullName, reader.WaveFormat, 320, tag))
+                                                {
+                                                    reader.CopyTo(writer);
+                                                }
+                                            }
+                                        }
+                                        else
+                                        {
+                                            File.Copy(songs[k].Item2, fullName);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        PrintLog(item.Item2, "File exists", "Writing");
+                                    }
+                                    FileAttributes attributes = File.GetAttributes(fullName);
+                                    if ((attributes & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
+                                    {
+                                        File.SetAttributes(fullName, attributes & ~FileAttributes.ReadOnly);
+                                    }
+                                    curDone++;
+                                    curFolder++;
+                                    this.Dispatcher.Invoke(() =>
+                                    {
+                                        this.TaskbarItemInfo.ProgressValue = (double)curDone / total;
+                                    });
+                                };
+                            }
                         }
+                        this.Dispatcher.Invoke(() =>
+                        {
+                            this.TaskbarItemInfo.ProgressState = System.Windows.Shell.TaskbarItemProgressState.None;
+                        });
+                        this.Dispatcher.Invoke(() =>
+                        {
+                            inputButton.IsEnabled = true;
+                            outputButton.IsEnabled = true;
+                            start.IsEnabled = true;
+                            inputLabel.IsEnabled = true;
+                            outputLabel.IsEnabled = true;
+                        });
                     }
-                    this.Dispatcher.Invoke(() =>
+                    catch (Exception ee)
                     {
-                        this.TaskbarItemInfo.ProgressState = System.Windows.Shell.TaskbarItemProgressState.None;
-                    });
-                    this.Dispatcher.Invoke(() =>
-                    {
-                        inputButton.IsEnabled = true;
-                        outputButton.IsEnabled = true;
-                        start.IsEnabled = true;
-                        inputLabel.IsEnabled = true;
-                        outputLabel.IsEnabled = true;
-                    });
+                        var stack = ee.StackTrace;
+                        ;
+                    }
                 });
             }
         }

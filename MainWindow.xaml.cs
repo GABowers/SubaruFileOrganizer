@@ -196,7 +196,7 @@ namespace SubaruFileOrganizer
                             artistAlbums.Add(artist, albums);
                         }
                         int curFolder = 0;
-                        int curFolderCount = 0;
+                        int curFolderCount = 1;
                         total = allData.Count;
                         t.Start();
                         this.Dispatcher.Invoke(() =>

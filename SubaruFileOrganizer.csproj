@@ -28,7 +28,7 @@
     <UpdatePeriodically>false</UpdatePeriodically>
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
-    <ApplicationRevision>4</ApplicationRevision>
+    <ApplicationRevision>5</ApplicationRevision>
     <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
     <UseApplicationTrust>false</UseApplicationTrust>
     <PublishWizardCompleted>true</PublishWizardCompleted>
@@ -56,10 +56,10 @@
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup>
-    <ManifestCertificateThumbprint>7C5A23C713637C7EB0F68B3D311258CB48B4313B</ManifestCertificateThumbprint>
+    <ManifestCertificateThumbprint>0C1001AAAC97ED8A4E185EA7E8045D991D1C96F5</ManifestCertificateThumbprint>
   </PropertyGroup>
   <PropertyGroup>
-    <ManifestKeyFile>SubaruFileOrganizer_TemporaryKey.pfx</ManifestKeyFile>
+    <ManifestKeyFile>SubaruFileOrganizer_1_TemporaryKey.pfx</ManifestKeyFile>
   </PropertyGroup>
   <PropertyGroup>
     <GenerateManifests>true</GenerateManifests>
@@ -164,6 +164,7 @@
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>
     </None>
+    <None Include="SubaruFileOrganizer_1_TemporaryKey.pfx" />
     <None Include="SubaruFileOrganizer_TemporaryKey.pfx" />
   </ItemGroup>
   <ItemGroup>

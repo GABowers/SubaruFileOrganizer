@@ -1,6 +1,7 @@
 ﻿using ATL;
 using NAudio.Wave;
 using System;
+using System.Globalization;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -125,6 +126,8 @@ namespace SubaruFileOrganizer
                                 var tag = new Track(item);
                                 if (tag.Title != null && tag.Year != 0 && tag.Album != null && (String.IsNullOrWhiteSpace(tag.AlbumArtist)== false || String.IsNullOrWhiteSpace(tag.Artist) == false)) // checking for any metadata at all
                                 {
+                                    tag.Artist = System.Threading.Thread.CurrentThread.CurrentCulture.TextInfo.ToTitleCase(tag.Artist);
+                                    tag.AlbumArtist = System.Threading.Thread.CurrentThread.CurrentCulture.TextInfo.ToTitleCase(tag.AlbumArtist);
                                     allData.Add(new Tuple<Track, string>(tag, item));
                                 }
                                 else
@@ -139,6 +142,8 @@ namespace SubaruFileOrganizer
                                     var tag = new Track(item);
                                     if (tag.Title != null && tag.Year != 0 && tag.Album != null && (String.IsNullOrWhiteSpace(tag.AlbumArtist) == false || String.IsNullOrWhiteSpace(tag.Artist) == false)) // checking for any metadata at all
                                     {
+                                        tag.Artist = System.Threading.Thread.CurrentThread.CurrentCulture.TextInfo.ToTitleCase(tag.Artist);
+                                        tag.AlbumArtist = System.Threading.Thread.CurrentThread.CurrentCulture.TextInfo.ToTitleCase(tag.AlbumArtist);
                                         allData.Add(new Tuple<Track, string>(tag, item));
                                     }
                                     else
@@ -173,91 +178,26 @@ namespace SubaruFileOrganizer
                         }
                         artists = artists.Distinct().ToList();
                         artists.Sort();
-                        Dictionary<string, List<DateTime>> artistAlbums = new Dictionary<string, List<DateTime>>();
-                        foreach (var artist in artists)
-                        {
-                            var artistTracks = allData.Where((x) =>
-                            {
-                                if (String.IsNullOrWhiteSpace(x.Item1.AlbumArtist) == false)
-                                {
-                                    if (x.Item1.AlbumArtist.Equals(artist))
-                                    {
-                                        return true;
-                                    }
-                                }
-                                else
-                                {
-                                    if (x.Item1.Artist.Equals(artist))
-                                    {
-                                        return true;
-                                    }
-                                }
-                                return false;
-                            }).ToList();
-                            var years = artistTracks.Select(x => x.Item1.Year).Distinct().ToList();
-                            for (int i = 0; i < years.Count; i++)
-                            {
-                                var albumsInYear = artistTracks.Where(x => x.Item1.Year == years[i]).Select(x => x.Item1.Album).Distinct().ToList();
-                                var anyMin = artistTracks.Where(x => x.Item1.Year == years[i] && albumsInYear.Contains(x.Item1.Album)).Any(x => x.Item1.Date == DateTime.MinValue);
-                                var albumDates = artistTracks.Where(x => x.Item1.Year == years[i] && albumsInYear.Contains(x.Item1.Album)).GroupBy(x => x.Item1.Album).Select(groups => groups.First()).Select(xx => xx.Item1.Date).ToList();
-                                bool notSame = albumDates.Distinct().Count() != albumDates.Count;
-                                if (notSame)
-                                {
-                                    ;
-                                }
-                                // if ANY are bad, we have to redo them all...
-                                if (albumsInYear.Count > 1 && (anyMin || notSame))
-                                {
-                                    for (int j = 0; j < albumsInYear.Count; j++)
-                                    {
-                                        var prop = j / albumsInYear.Count;
-                                        var dayProp = (int)(365 * prop);
-                                        DateTime date0 = new DateTime(years[i], 1, 1);
-                                        var date = date0.AddDays(dayProp);
-                                        var subTracks = artistTracks.Where(x => x.Item1.Year == years[i] && x.Item1.Album == albumsInYear[j]).ToList();
-                                        foreach (var item in subTracks)
-                                        {
-                                            allData.Where(x => x.Item1 == item.Item1).FirstOrDefault().Item1.Date = date;
-                                        }
-                                    }
-                                }
-                                for (int j = 0; j < albumsInYear.Count; j++)
-                                {
-                                    var subTracks = artistTracks.Where(x => x.Item1.Year == years[i] && x.Item1.Album == albumsInYear[j]).ToList();
-                                    var dates = subTracks.Select(x => x.Item1.Date).Distinct().ToList();
-                                    if (dates.Count > 1)
-                                    {
-                                        dates.Sort();
-                                        foreach (var item in subTracks)
-                                        {
-                                            allData.Where(x => x == item).FirstOrDefault().Item1.Date = dates.First();
-                                        }
-
-                                    }
-                                }
-                            }
-
-                            var albums = artistTracks.Select(x => x.Item1.Date).Distinct().ToList();
-                            //albums = albums.OrderBy(x => x.Item1).ThenBy(x => x.Item2).ToList();
-                            artistAlbums.Add(artist, albums);
-                        }
-                        int curFolder = 0;
-                        int curFolderCount = 1;
-                        total = allData.Count;
+                        var allList = allData.ToList();
+                        Dictionary<string, List<DateTime>> artistAlbums = SortArtistAlbums(artists, allList);
+                        
+                        int songsInFolder = 0; // denotes each folder with 256 songs
+                        int curFolderCount = 0; // ???
+                        total = allList.Count;
                         t.Start();
                         this.Dispatcher.Invoke(() =>
                         {
                             descriptionLabel.Content = "Copying files: ";
                             totalLabel.Content = total;
                             SetFullAccessPermissionsForEveryone(output);
-                            Directory.CreateDirectory(output + "/" + curFolderCount.ToString());
+                            Directory.CreateDirectory(output + "/" + StringFromNumber(curFolderCount));
                         });
                         Random rng = new Random();
                         for (int i = 0; i < artists.Count; i++)
                         {
                             for (int j = 0; j < artistAlbums[artists[i]].Count; j++)
                             {
-                                var songs = allData.Where(x =>
+                                var songs = allList.Where(x =>
                                 {
                                     if (x.Item1.Date.Equals(artistAlbums[artists[i]][j]))
                                     {
@@ -282,10 +222,10 @@ namespace SubaruFileOrganizer
                                         return false;
                                     }
                                 }).ToList();
-                                if ((curFolder + songs.Count) > 256)
+                                if ((songsInFolder + songs.Count) > 256)
                                 {
                                     curFolderCount++;
-                                    curFolder = 0;
+                                    songsInFolder = 0;
                                     if (songs.Count > 256)
                                     {
                                         foreach (var item in songs)
@@ -296,7 +236,7 @@ namespace SubaruFileOrganizer
                                     }
                                     this.Dispatcher.Invoke(() =>
                                     {
-                                        Directory.CreateDirectory(output + "/" + curFolderCount.ToString());
+                                        Directory.CreateDirectory(output + "/" + StringFromNumber(curFolderCount));
                                     });
                                 }
                                 songs = songs.OrderBy(x => x.Item1.DiscNumber).ThenBy(x => x.Item1.TrackNumber).ToList();
@@ -313,8 +253,8 @@ namespace SubaruFileOrganizer
                                             title = title.Replace(c, '_');
                                         }
                                     });
-                                    string newName = StringFromNumber(curFolder) + " " + title + "." + item.Item2.Split('.').Last();
-                                    string fullName = output + "/" + curFolderCount + "/" + newName;
+                                    string newName = StringFromNumber(songsInFolder) + " " + title + "." + item.Item2.Split('.').Last();
+                                    string fullName = output + "/" + StringFromNumber(curFolderCount) + "/" + newName;
                                     if (fullName.ToLower().Contains(".flac"))
                                     {
                                         flac = true;
@@ -331,34 +271,6 @@ namespace SubaruFileOrganizer
                                                 using (var writer = new NAudio.Lame.LameMP3FileWriter(fullName, reader.WaveFormat, 320))
                                                 {
                                                     reader.CopyTo(writer);
-                                                    Track newTrack = new Track(fullName);
-                                                    newTrack.AdditionalFields = item.Item1.AdditionalFields;
-                                                    newTrack.Album = item.Item1.Album;
-                                                    newTrack.AlbumArtist = item.Item1.AlbumArtist;
-                                                    newTrack.Artist = item.Item1.Artist;
-                                                    newTrack.Chapters = item.Item1.Chapters;
-                                                    newTrack.ChaptersTableDescription = item.Item1.ChaptersTableDescription;
-                                                    newTrack.Comment = item.Item1.Comment;
-                                                    newTrack.Composer = item.Item1.Composer;
-                                                    newTrack.Conductor = item.Item1.Conductor;
-                                                    newTrack.Copyright = item.Item1.Copyright;
-                                                    newTrack.Date = item.Item1.Date;
-                                                    newTrack.Description = item.Item1.Description;
-                                                    newTrack.DiscNumber = item.Item1.DiscNumber;
-                                                    newTrack.DiscTotal = item.Item1.DiscTotal;
-                                                    newTrack.Genre = item.Item1.Genre;
-                                                    newTrack.Lyrics = item.Item1.Lyrics;
-                                                    newTrack.OriginalAlbum = item.Item1.OriginalAlbum;
-                                                    newTrack.OriginalArtist = item.Item1.OriginalArtist;
-                                                    newTrack.PictureTokens = item.Item1.PictureTokens;
-                                                    newTrack.Popularity = item.Item1.Popularity;
-                                                    newTrack.Publisher = item.Item1.Publisher;
-                                                    newTrack.PublishingDate = item.Item1.PublishingDate;
-                                                    newTrack.Title = item.Item1.Title;
-                                                    newTrack.TrackNumber = item.Item1.TrackNumber;
-                                                    newTrack.TrackTotal = item.Item1.TrackTotal;
-                                                    newTrack.Year = item.Item1.Year;
-                                                    newTrack.Save();
                                                 }
                                             }
                                         }
@@ -371,13 +283,41 @@ namespace SubaruFileOrganizer
                                     {
                                         PrintLog(item.Item2, "File exists", "Writing");
                                     }
+                                    Track newTrack = new Track(fullName);
+                                    newTrack.AdditionalFields = item.Item1.AdditionalFields;
+                                    newTrack.Album = item.Item1.Album;
+                                    newTrack.AlbumArtist = item.Item1.AlbumArtist;
+                                    newTrack.Artist = item.Item1.Artist;
+                                    newTrack.Chapters = item.Item1.Chapters;
+                                    newTrack.ChaptersTableDescription = item.Item1.ChaptersTableDescription;
+                                    newTrack.Comment = item.Item1.Comment;
+                                    newTrack.Composer = item.Item1.Composer;
+                                    newTrack.Conductor = item.Item1.Conductor;
+                                    newTrack.Copyright = item.Item1.Copyright;
+                                    newTrack.Date = item.Item1.Date;
+                                    newTrack.Description = item.Item1.Description;
+                                    newTrack.DiscNumber = item.Item1.DiscNumber;
+                                    newTrack.DiscTotal = item.Item1.DiscTotal;
+                                    newTrack.Genre = item.Item1.Genre;
+                                    newTrack.Lyrics = item.Item1.Lyrics;
+                                    newTrack.OriginalAlbum = item.Item1.OriginalAlbum;
+                                    newTrack.OriginalArtist = item.Item1.OriginalArtist;
+                                    newTrack.PictureTokens = item.Item1.PictureTokens;
+                                    newTrack.Popularity = item.Item1.Popularity;
+                                    newTrack.Publisher = item.Item1.Publisher;
+                                    newTrack.PublishingDate = item.Item1.PublishingDate;
+                                    newTrack.Title = item.Item1.Title;
+                                    newTrack.TrackNumber = item.Item1.TrackNumber;
+                                    newTrack.TrackTotal = item.Item1.TrackTotal;
+                                    newTrack.Year = item.Item1.Year;
+                                    newTrack.Save();
                                     FileAttributes attributes = File.GetAttributes(fullName);
                                     if ((attributes & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
                                     {
                                         File.SetAttributes(fullName, attributes & ~FileAttributes.ReadOnly);
                                     }
                                     curDone++;
-                                    curFolder++;
+                                    songsInFolder++;
                                     this.Dispatcher.Invoke(() =>
                                     {
                                         this.TaskbarItemInfo.ProgressValue = (double)curDone / total;
@@ -400,11 +340,87 @@ namespace SubaruFileOrganizer
                     }
                     catch (Exception ee)
                     {
-                        var stack = ee.StackTrace;
-                        ;
+                        PrintLog(null, ee.Message, ee.StackTrace);
                     }
                 });
             }
+        }
+
+        static Dictionary<string, List<DateTime>> SortArtistAlbums(List<string> artists, List<Tuple<Track, string>>  allList)
+        {
+            Dictionary<string, List<DateTime>> output = new Dictionary<string, List<DateTime>>();
+            foreach (var artist in artists)
+            {
+                var artistTracks = allList.Where((x) =>
+                {
+                    if (String.IsNullOrWhiteSpace(x.Item1.AlbumArtist) == false)
+                    {
+                        if (x.Item1.AlbumArtist.Equals(artist))
+                        {
+                            return true;
+                        }
+                    }
+                    else
+                    {
+                        if (x.Item1.Artist.Equals(artist))
+                        {
+                            return true;
+                        }
+                    }
+                    return false;
+                }).ToList();
+                if(artist.ToLower().Contains("sent"))
+                {
+                    ;
+                }
+                var years = artistTracks.Select(x => x.Item1.Year).Distinct().ToList();
+                for (int i = 0; i < years.Count; i++)
+                {
+                    var albumsInYear = artistTracks.Where(x => x.Item1.Year == years[i]).Select(x => x.Item1.Album).Distinct().ToList();
+                    var anyMin = artistTracks.Where(x => x.Item1.Year == years[i] && albumsInYear.Contains(x.Item1.Album)).Any(x => x.Item1.Date == DateTime.MinValue);
+                    var albumDates = artistTracks.Where(x => x.Item1.Year == years[i] && albumsInYear.Contains(x.Item1.Album)).GroupBy(x => x.Item1.Album).Select(groups => groups.First()).Select(xx => xx.Item1.Date).ToList();
+                    bool notSame = albumDates.Distinct().Count() != albumDates.Count;
+                    // if ANY are bad, we have to redo them all...
+                    if (albumsInYear.Count > 1 && (anyMin || notSame))
+                    {
+                        for (int j = 0; j < albumsInYear.Count; j++)
+                        {
+                            var prop = j / albumsInYear.Count;
+                            var dayProp = (int)(365 * prop);
+                            DateTime date0 = new DateTime(years[i], 1, 1);
+                            var date = date0.AddDays(dayProp);
+                            var subTracks = artistTracks.Where(x => x.Item1.Year == years[i] && x.Item1.Album == albumsInYear[j]).ToList();
+                            foreach (var item in subTracks)
+                            {
+                                allList.Where(x => x.Item1 == item.Item1).FirstOrDefault().Item1.Date = date;
+                            }
+                        }
+                    }
+                    for (int j = 0; j < albumsInYear.Count; j++)
+                    {
+                        var subTracks = artistTracks.Where(x => x.Item1.Year == years[i] && x.Item1.Album == albumsInYear[j]).ToList();
+                        var dates = subTracks.Select(x => x.Item1.Date).Distinct().ToList();
+                        if (dates.Count > 1)
+                        {
+                            dates.Sort();
+                            foreach (var item in subTracks)
+                            {
+                                var index = allList.IndexOf(item);
+                                if (index > -1)
+                                {
+                                    allList[index].Item1.Date = dates.Last();
+                                }
+                            }
+
+                        }
+                    }
+                }
+
+                var albums = artistTracks.Select(x => x.Item1.Date).Distinct().ToList();
+                albums.Sort();
+                output.Add(artist, albums);
+            }
+            return output;
         }
 
         string StringFromNumber(int number)

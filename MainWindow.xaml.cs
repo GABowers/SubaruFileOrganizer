@@ -369,7 +369,7 @@ namespace SubaruFileOrganizer
                     }
                     return false;
                 }).ToList();
-                if(artist.ToLower().Contains("sent"))
+                if(artist.ToLower().Contains("iu")) // this is for catching things we need to debug
                 {
                     ;
                 }
@@ -385,7 +385,7 @@ namespace SubaruFileOrganizer
                     {
                         for (int j = 0; j < albumsInYear.Count; j++)
                         {
-                            var prop = j / albumsInYear.Count;
+                            var prop = (double)j / albumsInYear.Count;
                             var dayProp = (int)(365 * prop);
                             DateTime date0 = new DateTime(years[i], 1, 1);
                             var date = date0.AddDays(dayProp);
